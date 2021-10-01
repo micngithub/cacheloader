@@ -82,6 +82,7 @@ private:
     bool mAsynchronous = false;
     QQmlIncubator mIncubator;
     std::shared_ptr<QQmlComponent> mComponent;
+    bool mWaitForIncubator = false;
 
     static QMap<QUrl, QQuickItem*> gCacheMap;
     static QQmlEngine* gQmlEngine;

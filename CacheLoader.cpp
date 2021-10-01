@@ -1,18 +1,18 @@
 /*
  * MIT License
- * 
+ *
  * Copyright (c) 2021 micn
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -24,6 +24,7 @@
 
 #include "CacheLoader.h"
 #include <QQmlIncubator>
+#include <QTimer>
 
 QMap<QUrl, QQuickItem*> CacheLoader::gCacheMap = QMap<QUrl, QQuickItem*>();
 QQmlEngine* CacheLoader::gQmlEngine = nullptr;
@@ -146,18 +147,30 @@ void CacheLoader::loadQML(bool readOnly) {
     if (mAsynchronous) {
         mComponent->create(mIncubator);
 
-        int count = 0;
-        while (!mIncubator.isReady()) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-            count++;
-
-            if (count == 200) {
-                qWarning() << "timeout. It took 1 second to read the qml file.";
+        QTimer* timer = new QTimer;
+        QObject::connect(timer, &QTimer::timeout, [this]() {
+            qWarning() << "timeout. It took 1 second to read the qml file.";
+            if (mIncubator.isLoading()) {
                 mIncubator.forceCompletion();
-                break;
+            }
+
+            mWaitForIncubator = false;
+        });
+        timer->setSingleShot(true);
+        timer->start(1000);
+
+        mWaitForIncubator = true;
+        while (mWaitForIncubator) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (mIncubator.isReady()) {
+                mWaitForIncubator = false;
             }
         }
         createdItem = qobject_cast<QQuickItem*>(mIncubator.object());
+
+        timer->stop();
+        timer->deleteLater();
+
     } else {
         createdItem = qobject_cast<QQuickItem*>(mComponent->create());
     }
