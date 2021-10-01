@@ -1,4 +1,4 @@
-# qml_cacheloader
+# cacheloader
 This code was created to reduce the load due to repeated qml loads by using cached quickitem without rereading the qml once read.
 
 It was prepared to reduce the cpu load generated when two qmls were repeatedly loaded using a qml Loader.
