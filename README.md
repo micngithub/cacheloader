@@ -20,6 +20,7 @@ Memory leakage may occur because there is no delete code for the generated objec
 However, this part is a problem that can be solved by adding it directly by the developer creating a deletion function, so I do not intend to add it in the future.
 
 The attached image is also applied to the mit license.
-thanks
+
+Thank you for reading it.
 
 @micn
