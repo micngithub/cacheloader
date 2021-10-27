@@ -21,24 +21,37 @@ Window {
         repeat: true
         onTriggered: {
             window.count += 1
-
-            if( window.count % 2 == 0) {
-                testLoader.source = "qrc:/TestQml.qml"
-            } else {
-                testLoader.source = "qrc:/TestQml2.qml"
-            }
         }
     }
 
-    //    Loader {
-    //        id : testLoader
-    //        active: true
-    //        source : "qrc:/TestQml.qml"
-    //    }
+    Item {
+        id : realParent
+        anchors.fill: parent
+
+
+    }
 
     CacheLoader {
         id : testLoader
         active: true
-        source : "qrc:/TestQml.qml"
+        asynchronous: true
+        source :
+            switch ( window.count % 3) {
+            case 0: {
+                "qrc:/TestQml.qml"
+            }
+                break;
+            case 1: {
+                "qrc:/TestQml2.qml"
+            }
+                break;
+            case 2: {
+                "qrc:/TestQml3.qml"
+            }
+                break;
+            default :
+                break;
+            }
     }
 }
+

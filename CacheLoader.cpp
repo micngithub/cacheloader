@@ -1,28 +1,6 @@
-/*
- * MIT License
- *
- * Copyright (c) 2021 micn
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.The MIT License (MIT)
- */
-
 #include "CacheLoader.h"
+
+#include <QCoreApplication>
 #include <QQmlIncubator>
 #include <QTimer>
 
@@ -35,24 +13,30 @@ void CacheLoader::setEngine(QQmlEngine* engine) {
 
 CacheLoader::CacheLoader(QQuickItem* parent) : QQuickItem(parent) {
     if (gQmlEngine == nullptr) {
-        qWarning() << "qml engine object is nullptr. use CacheLoader::setEngine().";
+        qWarning() << "[CacheLoader] qml engine object is nullptr. use CacheLoader::setEngine().";
     }
 }
 
 CacheLoader::~CacheLoader() {
-    for (auto item : gCacheMap) {
-        item->setParentItem(nullptr);
-        item->setParent(nullptr);
-        item->setEnabled(false);
-        item->setVisible(false);
-        item->deleteLater();
+    QQuickItem* quickItem = qobject_cast<QQuickItem*>(mItem);
+    if (quickItem) {
+        quickItem->setParentItem(nullptr);
+        quickItem->setParent(nullptr);
+        quickItem->setEnabled(false);
+    }
+
+    mItem = nullptr;
+
+    if (mIncubator.isLoading()) {
+        mIncubator.forceCompletion();
+        mIncubator.clear();
+    } else {
+        mIncubator.clear();
     }
 
     if (mComponent) {
         mComponent.reset();
     }
-
-    mIncubator.clear();
 }
 
 void CacheLoader::cacheItem() {
@@ -67,10 +51,12 @@ void CacheLoader::setActive(bool newVal) {
     mActive = newVal;
 
     if (mActive == true && mItem == nullptr) {
-        loadQML();
+        QMetaObject::invokeMethod(this, "loadQML", Qt::QueuedConnection);
     } else if (mActive == false) {
         QQuickItem* quickItem = qobject_cast<QQuickItem*>(mItem);
         if (quickItem) {
+            quickItem->setEnabled(false);
+            quickItem->setParent(nullptr);
             quickItem->setParentItem(nullptr);
         }
         mItem = nullptr;
@@ -85,10 +71,12 @@ void CacheLoader::setSource(const QUrl& newVal) {
     mUrl = newVal;
 
     if (mActive && !mUrl.isEmpty()) {
-        loadQML();
+        QMetaObject::invokeMethod(this, "loadQML", Qt::QueuedConnection);
     } else if (mUrl.isEmpty()) {
         QQuickItem* quickItem = qobject_cast<QQuickItem*>(mItem);
         if (quickItem) {
+            quickItem->setEnabled(false);
+            quickItem->setParent(nullptr);
             quickItem->setParentItem(nullptr);
         }
         mItem = nullptr;
@@ -121,24 +109,42 @@ QObject* CacheLoader::item() const {
 
 void CacheLoader::loadQML(bool readOnly) {
     if (mUrl.isEmpty()) {
-        qWarning() << "qml source is empty. use CacheLoader::setSource().";
+        qWarning() << "[CacheLoader] qml source is empty. use CacheLoader::setSource().";
         return;
     }
 
-    auto cachedItem = gCacheMap.value(mUrl, nullptr);
-    if (cachedItem && !readOnly) {
-        QQuickItem* prevItem = qobject_cast<QQuickItem*>(mItem);
-        cachedItem->setParentItem(this);
-        if (prevItem) {
-            prevItem->setParentItem(nullptr);
-        }
+    if (gCacheMap.contains(mUrl)) {
+        auto cachedItem = gCacheMap.value(mUrl, nullptr);
+        if (cachedItem && !readOnly) {
+            QQuickItem* prevItem = qobject_cast<QQuickItem*>(mItem);
+            if (cachedItem == mItem) {
+                if (prevItem) {
+                    prevItem->setEnabled(true);
+                    prevItem->setParent(this);
+                    prevItem->setParentItem(this);
+                }
+            } else {
+                cachedItem->setEnabled(true);
+                cachedItem->setParent(this);
+                cachedItem->setParentItem(this);
+                if (prevItem) {
+                    prevItem->setEnabled(false);
+                    cachedItem->setParent(nullptr);
+                    prevItem->setParentItem(nullptr);
+                }
 
-        mItem = cachedItem;
-        return;
+                mItem = cachedItem;
+            }
+
+            emit loaded();
+            return;
+        } else if (!cachedItem) {
+            gCacheMap.remove(mUrl);
+        }
     }
 
     if (gQmlEngine == nullptr) {
-        qWarning() << "qml engine object is nullptr. use CacheLoader::setEngine().";
+        qWarning() << "[CacheLoader] qml engine object is nullptr. use CacheLoader::setEngine().";
         return;
     }
 
@@ -146,14 +152,12 @@ void CacheLoader::loadQML(bool readOnly) {
     mComponent = std::make_shared<QQmlComponent>(gQmlEngine, mUrl.toString());
     if (mAsynchronous) {
         mComponent->create(mIncubator);
-
         QTimer* timer = new QTimer;
         QObject::connect(timer, &QTimer::timeout, [this]() {
-            qWarning() << "timeout. It took 1 second to read the qml file.";
+            qWarning() << "[CacheLoader] timeout. It took 1 second to read the qml file.";
             if (mIncubator.isLoading()) {
                 mIncubator.forceCompletion();
             }
-
             mWaitForIncubator = false;
         });
         timer->setSingleShot(true);
@@ -167,10 +171,8 @@ void CacheLoader::loadQML(bool readOnly) {
             }
         }
         createdItem = qobject_cast<QQuickItem*>(mIncubator.object());
-
         timer->stop();
         timer->deleteLater();
-
     } else {
         createdItem = qobject_cast<QQuickItem*>(mComponent->create());
     }
@@ -179,18 +181,25 @@ void CacheLoader::loadQML(bool readOnly) {
         gCacheMap.insert(mUrl, createdItem);
 
         if (!readOnly) {
-            QQuickItem* prevItem = qobject_cast<QQuickItem*>(mItem);
+            createdItem->setSize(QSizeF(this->width(), this->height()));
+            createdItem->setParent(this);
             createdItem->setParentItem(this);
+            createdItem->setEnabled(true);
+            QQuickItem* prevItem = qobject_cast<QQuickItem*>(mItem);
             if (prevItem) {
+                prevItem->setEnabled(false);
+                prevItem->setParent(nullptr);
                 prevItem->setParentItem(nullptr);
             }
-
             mItem = createdItem;
         }
     } else {
-        qWarning() << "failed to read the qml file.";
+        qWarning() << "[CacheLoader] failed to read the qml file.";
         qWarning() << mComponent->errorString();
+        mComponent.reset();
+        return;
     }
 
+    emit loaded();
     mComponent.reset();
 }
